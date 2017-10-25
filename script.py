@@ -31,6 +31,16 @@ import re
 # youtube download
 from subprocess import call
 
+# import id3 tag editor
+import mutagen
+from mutagen.easyid3 import EasyID3
+from mutagen.mp3 import MP3
+import mutagen.id3
+
+# import os functions to test if folder are created
+import os
+import time
+
 
 def get_latest_saved_songs():
     scope = 'user-library-read'
@@ -49,7 +59,7 @@ def get_latest_saved_songs():
         lst = []
         for item in results['items']:
             track = item['track']
-            lst.append((track['name'], track['artists'][0]['name']))
+            lst.append((track['name'], track['artists'][0]['name'], track['album']['name']))
         return lst
     else:
         print("Can't get token for", username)
@@ -63,13 +73,13 @@ def get_yt_link( name ):
     return "http://www.youtube.com/watch?v=" + search_results[0]
 
 
-def dl_from_yt(url, song_title, artist):
+def dl_from_yt(url, path, codec):
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': '~/Music/spotify2mp3/' + artist + ' - '+ song_title + '.%(ext)s',
+        'outtmpl': path,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
+            'preferredcodec': codec,
             'preferredquality': '192',
         }],
         'logger': MyLogger(),
@@ -79,7 +89,33 @@ def dl_from_yt(url, song_title, artist):
         ydl.download([url])
     return
 
+i = 1
+for (song_title, artist, album_name) in get_latest_saved_songs():
+    print("(" + str(i) + "/20) " + song_title)
+    i += 1
 
-for (song_title, artist) in get_latest_saved_songs():
-    print(song_title)
-    dl_from_yt(get_yt_link(song_title + ' ' + artist), song_title, artist)
+    # Create folder structure
+    folder_path = os.path.expanduser('~/Music/' + artist + '/' + album_name)
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+
+    # Download the song
+    codec = 'mp3'
+    ytdl_path = folder_path + '/' + song_title
+    full_path = ytdl_path + '.' + codec
+    if not os.path.exists(full_path):
+        dl_from_yt(get_yt_link(song_title + ' ' + artist), ytdl_path + '.%(ext)s', codec)
+
+        # Add ID3 tags to it
+        # Wait for the conversion to finish
+        while not os.path.exists(full_path):
+            time.sleep(1)
+
+        music_file = MP3(full_path, ID3=EasyID3)
+    
+        music_file["artist"] = artist
+        music_file["album"] = album_name
+        music_file["title"] = song_title
+        music_file.save()
+    else:
+        print(song_title + ' already downloaded !')
